@@ -27,7 +27,7 @@ target_include_directories(${PROJECT_NAME}
 )
 
 # Add the executable
-add_executable(NetworkingExec src/Base.cpp)
+add_executable(NetworkingExec src/TcpServer.cpp "src/TcpConnection.cpp")
 
 # Link the library to the executable
 target_link_libraries(NetworkingExec PUBLIC ${PROJECT_NAME}

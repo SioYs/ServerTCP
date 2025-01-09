@@ -1,43 +1,39 @@
-﻿// ServerTcp.cpp : Defines the entry point for the application.
-//
-#include <boost/asio.hpp>
+﻿#include <boost/asio.hpp>
 #include <iostream>
 #include "ServerTcp.h"
 #include <Networking/Base.h>
 using namespace std;
-
 using boost::asio::ip::tcp;
 
-int main()
-{
+int main(int argc, char* argv[]) {
+    try {
+        boost::asio::io_context io_context;
 
-	try {
+        // Create an acceptor and bind to port 1337
+        tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), 1337));
 
-		boost::asio::io_context io_context;
+        // Retrieve and display the port dynamically
+        cout << "Server is listening on port: "
+            << acceptor.local_endpoint().port()
+            << endl;
 
+        while (true) {
+            cout << "Accepting connections..." << endl;
 
-		tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), 13));
+            tcp::socket socket(io_context);
+            acceptor.accept(socket);
 
-		while (true) {
+            cout << "Client connected! Sending message..." << endl;
 
-			tcp::socket socket(io_context);
-			acceptor.accept(socket);
+            string hello_message = "Hello beautiful client \n";
+            boost::system::error_code error;
 
+            boost::asio::write(socket, boost::asio::buffer(hello_message), error);
+        }
+    }
+    catch (const std::exception& e) {
+        cerr << e.what() << endl;
+    }
 
-			std::string hello_message = "Hello beautiful client \n";
-			boost::system::error_code error;
-
-			boost::asio::write(socket, boost::asio::buffer(hello_message), error);
-
-		}
-
-	}
-	catch (const std::exception& e) {
-		cerr << e.what() << endl;
-	}
-	
-
-
-
-	return 0;
+    return 0;
 }
