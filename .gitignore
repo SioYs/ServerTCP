@@ -1,0 +1,40 @@
+# Directories
+.vs/
+Binaries/
+
+# Files
+*.vcxproj
+*.vcxproj.user
+*.vcxproj.filters
+*.sln
+*.log
+Makefile
+
+# Ignore vcpkg-related files and directories
+vcpkg/
+vcpkg_installed/
+
+# Ignore Visual Studio cache and build files
+*.ipch
+*.pch
+*.obj
+
+*.sdf
+*.tlog
+*.ilk
+*.pdb
+*.o
+*.exe
+*.dll
+.vs/
+
+# Ignore build directories
+/out/
+/build/
+x64/
+Debug/
+Release/
+
+
+# Exclude
+!Vendor/Binaries
