@@ -4,10 +4,10 @@
 #pragma once	
 
 #include<boost/asio.hpp>
+#include"TcpConnection.h"
+#include <functional>
 
-
-
-namespace tcp {
+namespace Tcp {
 
 	enum class IPV {
 		V4,
@@ -19,7 +19,19 @@ namespace tcp {
 	public:
 		TcpServer(IPV ipv, int port);
 		int Run();
+
+
+		template <typename T>
+		void WriteConnection(int connectionIndex, const T& message);
 		
+		template <typename T>
+		using ListenCallback = std::function<void(int, const T&)>;
+
+
+		template<typename T>
+		void RegisterListenCallback(ListenCallback<T> callback);
+
+
 	private:
 		void startAccept();
 		IPV _ipVersion;
@@ -28,6 +40,7 @@ namespace tcp {
 		boost::asio::io_context _ioContext;
 		boost::asio::ip::tcp::acceptor _acceptor;
 
+		std::vector<TcpConnection::pointer> _connections {};
 
 	};
 }

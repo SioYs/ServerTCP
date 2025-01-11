@@ -1,10 +1,12 @@
 
 #include <iostream>
 #include "Networking/TcpServer.h"
+#include "Networking/TcpConnection.h"
+
 #pragma once
 
 
-namespace tcp {
+namespace Tcp {
 	using boost::asio::ip::tcp;
 
 
@@ -39,9 +41,24 @@ namespace tcp {
 
 	void TcpServer::startAccept() {
 		//create a connection 
+		auto connection = TcpConnection::Create( _ioContext);
 
-
+		_connections.push_back(connection);
 		//asynchronously accept the connection
+		_acceptor.async_accept(connection->Socket(), [connection, this](const boost::system::error_code& error) {
+
+
+			if (!error) {
+
+				connection->Start();
+
+			}
+
+			startAccept();
+
+		});
+	
+
 
 	}
 

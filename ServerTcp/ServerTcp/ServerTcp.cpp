@@ -1,39 +1,43 @@
 ﻿#include <boost/asio.hpp>
 #include <iostream>
 #include "ServerTcp.h"
-#include <Networking/Base.h>
+#include <Networking/TcpServer.h>
+#include <Networking/TcpConnection.h>
+
+
 using namespace std;
+
+using Tcp::TcpServer;
 using boost::asio::ip::tcp;
 
 int main(int argc, char* argv[]) {
-    try {
-        boost::asio::io_context io_context;
 
-        // Create an acceptor and bind to port 1337
-        tcp::acceptor acceptor(io_context, tcp::endpoint(tcp::v4(), 1337));
+    TcpServer server = TcpServer(Tcp::IPV::V4, 1337);
 
-        // Retrieve and display the port dynamically
-        cout << "Server is listening on port: "
-            << acceptor.local_endpoint().port()
-            << endl;
 
-        while (true) {
-            cout << "Accepting connections..." << endl;
+    server.Run();
 
-            tcp::socket socket(io_context);
-            acceptor.accept(socket);
-
-            cout << "Client connected! Sending message..." << endl;
-
-            string hello_message = "Hello beautiful client \n";
-            boost::system::error_code error;
-
-            boost::asio::write(socket, boost::asio::buffer(hello_message), error);
-        }
-    }
-    catch (const std::exception& e) {
-        cerr << e.what() << endl;
-    }
-
+  
     return 0;
 }
+
+
+//Cheat sheat for boost asio tcp accepto, and boost asio functions and stuff
+
+//acceptor.local_endpoint().port() - get the port of the created acceptor
+//The acceptor listens on a specific port and ip adress\
+//after it is set to listen it will accept connection and provides a socket that represents the connection to the client:
+
+//acceptor.accept(socket);
+
+
+
+
+//boost::asio::write(socket, boost::asio::buffer(hello_message), error);
+/*
+
+socket: This is the tcp::socket object that represents the connection to the client.It is used for communication between the server and the client.
+boost::asio::buffer(hello_message) : This converts the hello_message(a string or a byte array) into a buffer that can be sent over the network.
+boost::asio::write : This function writes data from the buffer to the socket.It sends the data over the network to the connected client. 
+
+*/
