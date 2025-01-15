@@ -1,62 +1,33 @@
-﻿// Client.cpp : Defines the entry point for the application.
-//
-#include <boost/asio.hpp>
-#include "Client.h"
-
-#include <array>
-using namespace std;
+﻿
+#include <Networking/client/TcpClient.h>
 #include <iostream>
-using boost::asio::ip::tcp;
+#include <thread>
 
 
+using namespace Tcp;
 
-int main(int argc, char*argv[])
-{
+int main(int argc, char* argv[]) {
 
-	
-	try {
+    std::cout << "I am a client" << std::endl;
+    TCPClient client{ "localhost", 1337 };
 
-		boost::asio::io_context ioContext;
+    client.OnMessage = [](const std::string& message) {
+        std::cout << message;
+    };
 
-		tcp::resolver resolver{ ioContext };
+    std::thread t{ [&client]() { client.Run(); } };
 
-		auto endpoints = resolver.resolve("127.0.0.1", "1337");
+    while (true) {
+        std::string message;
+        getline(std::cin, message);
 
-		tcp::socket socket{ ioContext };
+        if (message == "\\q") break;
+        message += "\n";
 
-		boost::asio::connect(socket, endpoints);
+        client.Post(message);
+    }
 
-
-		while (true) {
-			array<char, 128>buf{};
-			boost::system::error_code error;
-
-			size_t length = socket.read_some(boost::asio::buffer(buf), error);
-
-			if (error == boost::asio::error::eof) {
-				//clean connection cut
-
-				break;
-
-
-
-			}
-
-			else if(error){
-
-				throw boost::system::system_error(error);
-			}
-
-			cout.write(buf.data(), length);
-
-
-
-		}
-
-	}
-	catch (const std::exception& e) {
-		cerr << e.what() << endl;
-	}
-	cout << "Hello CMake." << endl;
-	return 0;
+    client.Stop();
+    t.join();
+    return 0;
 }

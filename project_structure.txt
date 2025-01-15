@@ -1,0 +1,550 @@
+File: ./Client/Client/Client.cpp
+------------------------------------
+﻿
+#include <Networking/client/TcpClient.h>
+#include <iostream>
+#include <thread>
+
+
+using namespace Tcp;
+
+int main(int argc, char* argv[]) {
+
+    std::cout << "I am a client" << std::endl;
+    TCPClient client{ "localhost", 1337 };
+
+    client.OnMessage = [](const std::string& message) {
+        std::cout << message;
+    };
+
+    std::thread t{ [&client]() { client.Run(); } };
+
+    while (true) {
+        std::string message;
+        getline(std::cin, message);
+
+        if (message == "\\q") break;
+        message += "\n";
+
+        client.Post(message);
+    }
+
+    client.Stop();
+    t.join();
+    return 0;
+}
+
+
+File: ./Client/Client/Client.h
+------------------------------------
+﻿// Client.h : Include file for standard system include files,
+// or project specific include files.
+
+#pragma once
+
+#include <iostream>
+
+// TODO: Reference additional headers your program requires here.
+
+
+
+File: ./Networking/include/Networking/client/TcpClient.h
+------------------------------------
+
+#pragma once
+#include <boost/asio.hpp>
+#include <queue>
+
+namespace Tcp {
+    namespace io = boost::asio;
+    using MessageHandler = std::function<void(std::string)>;
+
+    class TCPClient {
+    public:
+        TCPClient(const std::string& address, int port);
+
+        void Run();
+        void Stop();
+        void Post(const std::string& message);
+
+    private:
+        void asyncRead();
+        void onRead(boost::system::error_code ec, size_t bytesTransferred);
+        void asyncWrite();
+        void onWrite(boost::system::error_code ec, size_t bytesTransferred);
+
+    public:
+        MessageHandler OnMessage;
+
+    private:
+        io::io_context _ioContext{};
+        io::ip::tcp::socket _socket;
+
+        io::ip::tcp::resolver::results_type _endpoints;
+
+        io::streambuf _streamBuf{ 65536 };
+        std::queue<std::string> _outgoingMessages{};
+    };
+}
+
+
+File: ./Networking/include/Networking/server/TcpConnection.h
+------------------------------------
+#pragma once
+
+
+#include <boost/asio.hpp>
+#include <string>
+#include <iostream>
+#include <memory>
+#include <queue>
+
+
+namespace Tcp {
+    using boost::asio::ip::tcp;
+    namespace io = boost::asio;
+
+    using MessageHandler = std::function<void(std::string)>;
+    using ErrorHandler = std::function<void()>;
+
+    class TcpConnection : public std::enable_shared_from_this<TcpConnection> {
+    public:
+        using pointer = std::shared_ptr<TcpConnection>;
+
+        static pointer Create(io::ip::tcp::socket&& socket) {
+            return pointer(new TcpConnection(std::move(socket)));
+        }
+
+        inline const std::string& GetUsername() const {
+            return _username;
+        }
+
+        tcp::socket& Socket() {
+            return _socket;
+        }
+
+        void Start(MessageHandler&& messageHandler, ErrorHandler&& errorHandler);
+        void Post(const std::string& message);
+
+    private:
+        explicit TcpConnection(io::ip::tcp::socket&& socket);
+
+        // Wait for a new message from client
+        void asyncRead();
+        void onRead(boost::system::error_code ec, size_t bytesTranferred);
+
+        void asyncWrite();
+        void onWrite(boost::system::error_code ec, size_t bytesTransferred);
+
+    private:
+        tcp::socket _socket;
+        std::string _username;
+
+        std::queue<std::string> _outgoingMessages;
+        io::streambuf _streamBuf{ 65536 };
+
+        MessageHandler _messageHandler;
+        ErrorHandler _errorHandler;
+    };
+}
+
+
+
+
+//AI explanation :
+
+/*	The std::shared_ptr uses a reference count internally to track how many shared_ptr instances are pointing to the object."
+		"When the resence count drops to zero, the memory is automatically freed."*/
+
+		//auto strongThis = shared_from_this();
+
+				//this factory function is responsible for the creation of a new TcpConnection object and wraps is it in a shared pointer
+				//The idea of the shared pointer is the following:
+				//by using a shared pointer the lifetime of the object is automatically mananged and until all the shared_pointer are not used the object will stay alive
+				//If all the shared pointers are not used it will be deleted. This way we are managing memory leaks. And we are not deleting the object too early becasue 
+				//some other part of our app might still be using this object
+
+
+				// |
+				// |
+				// |
+				// |
+				// v
+
+
+		//static pointer Create(boost::asio::io_context& ioContext) {
+		//
+		//	return pointer(new TcpConnection(ioContext));
+		//}
+
+
+File: ./Networking/include/Networking/server/TcpServer.h
+------------------------------------
+﻿
+
+//C:\Users\bhari\source\repos\ServerTCP\Networking\include\Networking\Base.h
+#pragma once	
+
+#include<boost/asio.hpp>
+#include"TcpConnection.h"
+#include <functional>
+#include <optional>
+#include <unordered_set>
+
+
+namespace Tcp {
+    namespace io = boost::asio;
+
+    enum class IPV {
+        V4,
+        V6
+    };
+
+    class TcpServer {
+        using OnJoinHandler = std::function<void(TcpConnection::pointer)>;
+        using OnLeaveHandler = std::function<void(TcpConnection::pointer)>;
+        using OnClientMessageHandler = std::function<void(std::string)>;
+
+    public:
+        TcpServer(IPV ipv, int port);
+
+        int Run();
+        void Broadcast(const std::string& message);
+    private:
+        void startAccept();
+
+    public:
+        OnJoinHandler OnJoin;
+        OnLeaveHandler OnLeave;
+        OnClientMessageHandler OnClientMessage;
+
+    private:
+        IPV _ipVersion;
+        int _port;
+
+        io::io_context _ioContext;
+        io::ip::tcp::acceptor  _acceptor;
+        std::optional<io::ip::tcp::socket> _socket;
+        std::unordered_set<TcpConnection::pointer> _connections{};
+    };
+
+}
+
+
+
+File: ./Networking/src/client/TcpClient.cpp
+------------------------------------
+
+#include "Networking/client/TcpClient.h"
+
+
+namespace Tcp {
+
+    TCPClient::TCPClient(const std::string& address, int port) : _socket(_ioContext) {
+        io::ip::tcp::resolver resolver{ _ioContext };
+        _endpoints = resolver.resolve(address, std::to_string(port));
+    }
+
+    void TCPClient::Run() {
+        io::async_connect(_socket, _endpoints, [this](boost::system::error_code ec, io::ip::tcp::endpoint ep) {
+            if (!ec)
+                asyncRead();
+        });
+
+        _ioContext.run();
+    }
+
+    void TCPClient::Stop() {
+        boost::system::error_code ec;
+        _socket.close(ec);
+
+        if (ec) {
+            // process error
+        }
+    }
+
+    void TCPClient::Post(const std::string& message) {
+        bool queueIdle = _outgoingMessages.empty();
+        _outgoingMessages.push(message);
+
+        if (queueIdle) {
+            asyncWrite();
+        }
+    }
+
+    void TCPClient::asyncRead() {
+        io::async_read_until(_socket, _streamBuf, "\n", [this](boost::system::error_code ec, size_t bytesTransferred) {
+            onRead(ec, bytesTransferred);
+        });
+    }
+
+    void TCPClient::onRead(boost::system::error_code ec, size_t bytesTransferred) {
+        if (ec) {
+            Stop();
+            return;
+        }
+
+        std::stringstream message;
+        message << std::istream{ &_streamBuf }.rdbuf();
+        OnMessage(message.str());
+        asyncRead();
+    }
+
+    void TCPClient::asyncWrite() {
+        io::async_write(_socket, io::buffer(_outgoingMessages.front()), [this](boost::system::error_code ec, size_t bytesTransferred) {
+            onWrite(ec, bytesTransferred);
+        });
+    }
+
+    void TCPClient::onWrite(boost::system::error_code ec, size_t bytesTransferred) {
+        if (ec) {
+            Stop();
+            return;
+        }
+
+        _outgoingMessages.pop();
+
+        if (!_outgoingMessages.empty()) {
+            asyncWrite();
+        }
+    }
+}
+
+
+
+File: ./Networking/src/server/TcpConnection.cpp
+------------------------------------
+#include "Networking/server/TcpConnection.h"
+
+#include <boost/asio.hpp>
+#include <iostream>
+using std::cout;
+
+namespace Tcp {
+    TcpConnection::TcpConnection(io::ip::tcp::socket&& socket) : _socket(std::move(socket)) {
+        boost::system::error_code ec;
+
+        std::stringstream name;
+        name << _socket.remote_endpoint();
+
+        _username = name.str();
+    }
+
+    void TcpConnection::Start(MessageHandler&& messageHandler, ErrorHandler&& errorHandler) {
+        _messageHandler = std::move(messageHandler);
+        _errorHandler = std::move(errorHandler);
+
+        asyncRead();
+    }
+
+    void TcpConnection::Post(const std::string& message) {
+        bool queueIdle = _outgoingMessages.empty();
+        _outgoingMessages.push(message);
+
+        if (queueIdle) {
+            asyncWrite();
+        }
+    }
+
+    void TcpConnection::asyncRead() {
+        io::async_read_until(_socket, _streamBuf, "\n", [self = shared_from_this()]
+        (boost::system::error_code ec, size_t bytesTransferred) {
+            self->onRead(ec, bytesTransferred);
+        });
+    }
+
+    void TcpConnection::onRead(boost::system::error_code ec, size_t bytesTranferred) {
+        if (ec) {
+            _socket.close(ec);
+
+            _errorHandler();
+            return;
+        }
+
+        std::stringstream message;
+        message << _username << ": " << std::istream(&_streamBuf).rdbuf();
+        _streamBuf.consume(bytesTranferred);
+
+        _messageHandler(message.str());
+        asyncRead();
+    }
+
+    void TcpConnection::asyncWrite() {
+        io::async_write(_socket, io::buffer(_outgoingMessages.front()), [self = shared_from_this()]
+        (boost::system::error_code ec, size_t bytesTransferred) {
+            self->onWrite(ec, bytesTransferred);
+        });
+    }
+
+    void TcpConnection::onWrite(boost::system::error_code ec, size_t bytesTransferred) {
+        if (ec) {
+            _socket.close(ec);
+
+            _errorHandler();
+            return;
+        }
+
+        _outgoingMessages.pop();
+
+        if (!_outgoingMessages.empty()) {
+            asyncWrite();
+        }
+    }
+}
+
+
+
+File: ./Networking/src/server/TcpServer.cpp
+------------------------------------
+
+#include <iostream>
+#include "Networking/server/TcpServer.h"
+#include "Networking/server/TcpConnection.h"
+
+
+namespace Tcp {
+    using boost::asio::ip::tcp;
+    TcpServer::TcpServer(IPV ipv, int port) : _ipVersion(ipv), _port(port),
+        _acceptor(_ioContext, tcp::endpoint(_ipVersion == IPV::V4 ? tcp::v4() : tcp::v6(), _port)) {
+    }
+
+    int TcpServer::Run() {
+        try {
+            startAccept();
+            _ioContext.run();
+        }
+        catch (std::exception& e) {
+            std::cerr << e.what() << std::endl;
+            return -1;
+        }
+        return 0;
+    }
+
+    void TcpServer::Broadcast(const std::string& message) {
+        for (auto& connection : _connections) {
+            connection->Post(message);
+        }
+    }
+
+    void TcpServer::startAccept() {
+        _socket.emplace(_ioContext);
+
+        // asynchronously accept the connection
+        _acceptor.async_accept(*_socket, [this](const boost::system::error_code& error) {
+            auto connection = TcpConnection::Create(std::move(*_socket));
+
+            if (OnJoin) {
+                OnJoin(connection);
+            }
+
+            _connections.insert(connection);
+            if (!error) {
+                connection->Start(
+                    [this](const std::string& message) { if (OnClientMessage) OnClientMessage(message); },
+                    [&, weak = std::weak_ptr(connection)] {
+                    if (auto shared = weak.lock(); shared && _connections.erase(shared)) {
+                        if (OnLeave) OnLeave(shared);
+                    }
+                }
+                );
+            }
+
+            startAccept();
+        });
+    }
+
+
+
+	//Not a good practice to assing in ctor body especially for complex types like _acceptor. It is better to use the constructor initialization list where we do member initialization and it is better for complex types like the _acceptor
+//TcpServer::TcpServer( IPV ipv, int port)  {
+//	_ipVersion = ipv;
+//	_port = port;
+//	_acceptor = tcp::acceptor(_ioContext, tcp::endpoint(ipv == IPV::V4 ? tcp::v4() : tcp::v6(), port));
+
+
+
+//};
+
+}
+
+
+File: ./ServerTcp/ServerTcp/ServerTcp.cpp
+------------------------------------
+﻿#include <boost/asio.hpp>
+#include <iostream>
+#include "ServerTcp.h"
+#include <Networking/server/TcpServer.h>
+#include <Networking/server/TcpConnection.h>
+
+
+using namespace std;
+
+using Tcp::TcpServer;
+using boost::asio::ip::tcp;
+
+int main(int argc, char* argv[]) {
+
+	TcpServer server = TcpServer(Tcp::IPV::V4, 1337);
+
+
+	server.OnJoin = [](Tcp::TcpConnection::pointer server) {
+		cout << "User has joined the server: " << server->GetUsername() << endl;
+	
+
+	};
+	server.OnLeave = [](Tcp::TcpConnection::pointer server) {
+
+		cout << "User has left the server: " << server->GetUsername() << endl;
+
+	};
+
+	server.OnClientMessage = [&server](const std::string& message) {
+
+
+		cout << "User has sent a message " << message << endl;
+		server.Broadcast(message);
+
+	};
+
+ 
+	server.Run();
+
+
+	return 0;
+}
+
+
+//Cheat sheat for boost asio tcp accepto, and boost asio functions and stuff
+
+//acceptor.local_endpoint().port() - get the port of the created acceptor
+//The acceptor listens on a specific port and ip adress\
+//after it is set to listen it will accept connection and provides a socket that represents the connection to the client:
+
+//acceptor.accept(socket);
+
+
+
+
+//boost::asio::write(socket, boost::asio::buffer(hello_message), error);
+/*
+
+socket: This is the tcp::socket object that represents the connection to the client.It is used for communication between the server and the client.
+boost::asio::buffer(hello_message) : This converts the hello_message(a string or a byte array) into a buffer that can be sent over the network.
+boost::asio::write : This function writes data from the buffer to the socket.It sends the data over the network to the connected client.
+
+*/
+
+
+File: ./ServerTcp/ServerTcp/ServerTcp.h
+------------------------------------
+﻿// ServerTcp.h : Include file for standard system include files,
+// or project specific include files.
+
+#pragma once
+
+#include <iostream>
+
+// TODO: Reference additional headers your program requires here.
+
+
+
